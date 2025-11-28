@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSL证书检测工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        
+        .controls {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status.warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        
+        .cert-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .cert-card {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .cert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .cert-type {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .cert-status {
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .cert-status.valid {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .cert-status.warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        
+        .cert-status.expired {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .cert-info {
+            margin-bottom: 10px;
+        }
+        
+        .cert-info label {
+            font-weight: bold;
+            color: #666;
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .cert-info p {
+            margin: 0;
+            word-break: break-all;
+        }
+        
+        .hostnames {
+            margin-top: 10px;
+        }
+        
+        .hostname {
+            display: inline-block;
+            background-color: #ecf0f1;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+        
+        .details-btn {
+            background-color: #95a5a6;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            font-size: 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        
+        .details-btn:hover {
+            background-color: #7f8c8d;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .close:hover {
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SSL证书检测工具</h1>
+        <div class="controls">
+            <button onclick="checkCertificates()">检测证书</button>
+        </div>
+        <div id="status" class="status"></div>
+        <div id="certList" class="cert-list"></div>
+    </div>
+
+    <div id="detailsModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h2>证书详情</h2>
+            <div id="certDetails"></div>
+        </div>
+    </div>
+
+    <script>
+        async function checkCertificates() {
+            const statusDiv = document.getElementById('status');
+            const certListDiv = document.getElementById('certList');
+            
+            statusDiv.textContent = '正在检测证书...';
+            statusDiv.className = 'status';
+            certListDiv.innerHTML = '';
+            
+            try {
+                const response = await fetch('/api/check-cert');
+                const data = await response.json();
+                
+                if (data.error) {
+                    statusDiv.textContent = `错误: ${data.error}`;
+                    statusDiv.className = 'status error';
+                    return;
+                }
+                
+                statusDiv.textContent = `检测完成，共发现 ${data.certificates.length} 个证书`;
+                statusDiv.className = 'status success';
+                
+                data.certificates.forEach(cert => {
+                    const certCard = createCertCard(cert);
+                    certListDiv.appendChild(certCard);
+                });
+            } catch (error) {
+                statusDiv.textContent = `请求失败: ${error.message}`;
+                statusDiv.className = 'status error';
+            }
+        }
+        
+        function createCertCard(cert) {
+            const card = document.createElement('div');
+            card.className = 'cert-card';
+            
+            card.innerHTML = `
+                <div class="cert-header">
+                    <span class="cert-type">${cert.type}</span>
+                    <span class="cert-status ${cert.status}">${cert.status === 'valid' ? '有效' : cert.status === 'warning' ? '即将过期' : '已过期'}</span>
+                </div>
+                <div class="cert-info">
+                    <label>剩余天数</label>
+                    <p>${cert.days_left} 天</p>
+                </div>
+                <div class="cert-info">
+                    <label>颁发日期</label>
+                    <p>${new Date(cert.issued_on).toLocaleString()}</p>
+                </div>
+                <div class="cert-info">
+                    <label>过期日期</label>
+                    <p>${new Date(cert.expires_on).toLocaleString()}</p>
+                </div>
+                <div class="cert-info">
+                    <label>颁发机构</label>
+                    <p>${cert.issuer}</p>
+                </div>
+                <div class="cert-info">
+                    <label>签名算法</label>
+                    <p>${cert.signature}</p>
+                </div>
+                <div class="cert-info">
+                    <label>域名</label>
+                    <div class="hostnames">
+                        ${cert.hostnames.map(hostname => `<span class="hostname">${hostname}</span>`).join('')}
+                    </div>
+                </div>
+                <button class="details-btn" onclick="showCertDetails('${cert.id}')">查看详情</button>
+            `;
+            
+            return card;
+        }
+        
+        async function showCertDetails(certId) {
+            const modal = document.getElementById('detailsModal');
+            const detailsDiv = document.getElementById('certDetails');
+            
+            detailsDiv.innerHTML = '<p>加载中...</p>';
+            modal.style.display = 'block';
+            
+            try {
+                const response = await fetch(`/api/cert-details?id=${certId}`);
+                const cert = await response.json();
+                
+                if (cert.error) {
+                    detailsDiv.innerHTML = `<p class="status error">错误: ${cert.error}</p>`;
+                    return;
+                }
+                
+                detailsDiv.innerHTML = `
+                    <div class="cert-info">
+                        <label>证书ID</label>
+                        <p>${cert.id}</p>
+                    </div>
+                    <div class="cert-info">
+                        <label>类型</label>
+                        <p>${cert.type}</p>
+                    </div>
+                    <div class="cert-info">
+                        <label>状态</label>
+                        <p>${cert.status}</p>
+                    </div>
+                    <div class="cert-info">
+                        <label>颁发日期</label>
+                        <p>${new Date(cert.issued_on).toLocaleString()}</p>
+                    </div>
+                    <div class="cert-info">
+                        <label>过期日期</label>
+                        <p>${new Date(cert.expires_on).toLocaleString()}</p>
+                    </div>
+                    <div class="cert-info">
+                        <label>颁发机构</label>
+                        <p>${cert.issuer}</p>
+                    </div>
+                    <div class="cert-info">
+                        <label>签名算法</label>
+                        <p>${cert.signature}</p>
+                    </div>
+                    <div class="cert-info">
+                        <label>域名</label>
+                        <div class="hostnames">
+                            ${cert.hostnames.map(hostname => `<span class="hostname">${hostname}</span>`).join('')}
+                        </div>
+                    </div>
+                    <div class="cert-info">
+                        <label>证书链</label>
+                        <p>${cert.certificates.join('\n')}</p>
+                    </div>
+                `;
+            } catch (error) {
+                detailsDiv.innerHTML = `<p class="status error">请求失败: ${error.message}</p>`;
+            }
+        }
+        
+        function closeModal() {
+            document.getElementById('detailsModal').style.display = 'none';
+        }
+        
+        window.onclick = function(event) {
+            const modal = document.getElementById('detailsModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
+        // 页面加载时自动检测
+        window.onload = checkCertificates;
+    </script>
+</body>
+</html>

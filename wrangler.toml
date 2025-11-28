@@ -1,0 +1,12 @@
+name = "ssl-cert-checker"
+main = "src/worker.js"
+compatibility_date = "2025-11-28"
+
+[[kv_namespaces]]
+binding = "CERTIFICATE_DATA"
+id = ""
+preview_id = ""
+
+[vars]
+API_KEY = ""
+ZONE_ID = ""
