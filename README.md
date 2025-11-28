@@ -117,6 +117,36 @@ npx wrangler deploy
 
 每个Cloudflare域名都有一个唯一的Zone ID，可以在域名仪表盘的右下角找到。
 
+### 管理后台密码
+
+默认情况下，管理后台的登录密码为 `admin`。你可以通过以下方式修改：
+
+1. **通过wrangler.toml配置**：
+   ```toml
+   [vars]
+   PASSWD = "your_custom_password"
+   ```
+
+2. **通过Cloudflare控制台配置**：
+   - 登录Cloudflare控制台
+   - 导航到Workers & Pages
+   - 选择你的Worker
+   - 在"设置" > "环境变量"中添加 `PASSWD` 变量
+
+### 登录流程
+
+1. 访问 `/admin` 路径
+2. 系统会自动跳转到登录页面 `/admin/login`
+3. 输入配置的密码
+4. 登录成功后会自动跳回 `/admin` 页面
+5. 点击导航栏的"登出"按钮可退出登录
+
+### 保护的路由
+
+- `/admin` - 管理后台页面
+- `/api/monitored-domains` - 管理监测地址的API端点
+- `/api/monitored-domains/*` - 单个监测地址的API端点
+
 ## 部署说明
 
 ### 使用Wrangler CLI部署

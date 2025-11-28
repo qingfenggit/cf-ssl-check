@@ -10,3 +10,4 @@ preview_id = ""
 [vars]
 API_KEY = ""
 ZONE_ID = ""
+PASSWD = ""

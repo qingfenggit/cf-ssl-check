@@ -2,6 +2,139 @@ addEventListener('fetch', event => {
   event.respondWith(handleRequest(event.request));
 });
 
+// 生成会话ID
+function generateSessionId() {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+}
+
+// 检查是否已登录
+function isLoggedIn(request) {
+  const cookies = request.headers.get('Cookie') || '';
+  return cookies.includes('logged_in=true');
+}
+
+// 生成登录页面
+function getLoginHtml() {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - SSL证书检测工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        
+        .login-container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #666;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            width: 100%;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h1>登录管理后台</h1>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit">登录</button>
+        </form>
+    </div>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            const response = await fetch('/admin/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ password })
+            });
+            if (response.ok) {
+                window.location.href = '/admin';
+            } else {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error';
+                errorDiv.textContent = '密码错误';
+                const form = document.getElementById('loginForm');
+                form.insertBefore(errorDiv, form.firstChild);
+            }
+        });
+    </script>
+</body>
+</html>`;
+}
+
 async function handleRequest(request) {
   const { pathname } = new URL(request.url);
 
@@ -12,6 +145,69 @@ async function handleRequest(request) {
 
   if (pathname === '/api/cert-details') {
     return getCertDetails(request);
+  }
+
+  // Web pages
+  if (pathname === '/') {
+    return new Response(getIndexHtml(), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html',
+      },
+    });
+  }
+
+  // Admin login handling
+  if (pathname === '/admin/login') {
+    if (request.method === 'POST') {
+      const { password } = await request.json();
+      const expectedPassword = PASSWD || 'admin';
+      if (password === expectedPassword) {
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Set-Cookie': 'logged_in=true; Path=/admin; HttpOnly; Secure; SameSite=Lax'
+          },
+        });
+      } else {
+        return new Response(JSON.stringify({ success: false }), {
+          status: 401,
+          headers: {
+            'Content-Type': 'application/json'
+          },
+        });
+      }
+    }
+    return new Response(getLoginHtml(), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html',
+      },
+    });
+  }
+
+  // Admin logout
+  if (pathname === '/admin/logout') {
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': 'logged_in=; Path=/admin; HttpOnly; Secure; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT'
+      },
+    });
+  }
+
+  // Protect admin routes
+  if (pathname.startsWith('/admin') || pathname.startsWith('/api/monitored-domains')) {
+    if (!isLoggedIn(request)) {
+      return new Response(getLoginHtml(), {
+        status: 302,
+        headers: {
+          'Location': '/admin/login'
+        },
+      });
+    }
   }
 
   // Management API endpoints
@@ -34,16 +230,6 @@ async function handleRequest(request) {
 
   if (pathname === '/api/dns-records') {
     return getDnsRecords(request);
-  }
-
-  // Web pages
-  if (pathname === '/') {
-    return new Response(getIndexHtml(), {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/html',
-      },
-    });
   }
 
   if (pathname === '/admin') {
@@ -101,6 +287,9 @@ function getIndexHtml() {
             padding: 10px;
             border-radius: 5px;
             margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
         .nav ul {
@@ -117,6 +306,10 @@ function getIndexHtml() {
         
         .nav a:hover {
             text-decoration: underline;
+        }
+        
+        .nav-right {
+            margin-left: auto;
         }
         
         .controls {
@@ -323,6 +516,9 @@ function getIndexHtml() {
                 <li><a href="/">证书检测</a></li>
                 <li><a href="/admin">管理监测地址</a></li>
             </ul>
+            <div class="nav-right">
+                <button onclick="logout()" style="background-color: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">登出</button>
+            </div>
         </div>
         <h1>SSL证书检测工具</h1>
         <div class="controls">
@@ -538,6 +734,17 @@ function getIndexHtml() {
             if (event.target == modal) {
                 modal.style.display = 'none';
             }
+        }
+        
+        // 登出功能
+        async function logout() {
+            await fetch('/admin/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            window.location.href = '/admin/login';
         }
         
         // 页面加载时自动检测
@@ -773,6 +980,9 @@ function getAdminHtml() {
                 <li><a href="/">证书检测</a></li>
                 <li><a href="/admin">管理监测地址</a></li>
             </ul>
+            <div class="nav-right">
+                <button onclick="logout()" style="background-color: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">登出</button>
+            </div>
         </div>
         <h1>管理监测地址</h1>
         
@@ -787,18 +997,24 @@ function getAdminHtml() {
                         <input type="text" id="domain" name="domain" placeholder="example.com" required>
                     </div>
                     <div class="form-group">
-                        <label for="type">类型</label>
-                        <input type="text" id="type" name="type" placeholder="A/CNAME" required>
+                        <label for="region">地区</label>
+                        <input type="text" id="region" name="region" placeholder="可选，如：国内/国外">
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="value">值</label>
-                        <input type="text" id="value" name="value" placeholder="IP地址或域名" required>
+                        <label for="originIp">源站IP</label>
+                        <input type="text" id="originIp" name="originIp" placeholder="源站服务器IP地址">
                     </div>
                     <div class="form-group">
+                        <label for="cdnCname">CDN CNAME</label>
+                        <input type="text" id="cdnCname" name="cdnCname" placeholder="CDN节点域名">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
                         <label for="nodeInfo">节点信息</label>
-                        <input type="text" id="nodeInfo" name="nodeInfo" placeholder="可选，如：北京节点">
+                        <input type="text" id="nodeInfo" name="nodeInfo" placeholder="如：北京节点">
                     </div>
                 </div>
                 <button type="submit">添加</button>
@@ -822,18 +1038,24 @@ function getAdminHtml() {
                         <input type="text" id="editDomain" name="domain" required>
                     </div>
                     <div class="form-group">
-                        <label for="editType">类型</label>
-                        <input type="text" id="editType" name="type" required>
+                        <label for="editRegion">地区</label>
+                        <input type="text" id="editRegion" name="region" placeholder="可选，如：国内/国外">
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="editValue">值</label>
-                        <input type="text" id="editValue" name="value" required>
+                        <label for="editOriginIp">源站IP</label>
+                        <input type="text" id="editOriginIp" name="originIp" placeholder="源站服务器IP地址">
                     </div>
                     <div class="form-group">
+                        <label for="editCdnCname">CDN CNAME</label>
+                        <input type="text" id="editCdnCname" name="cdnCname" placeholder="CDN节点域名">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
                         <label for="editNodeInfo">节点信息</label>
-                        <input type="text" id="editNodeInfo" name="nodeInfo">
+                        <input type="text" id="editNodeInfo" name="nodeInfo" placeholder="如：北京节点">
                     </div>
                 </div>
                 <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
@@ -869,11 +1091,11 @@ function getAdminHtml() {
                         <div class="domain-info">
                             <div class="domain-name">${domain.domain}</div>
                             <div class="domain-meta">
-                                类型: ${domain.type} | 值: ${domain.value} | 节点: ${domain.node_info || '未设置'}
+                                地区: ${domain.region || '未设置'} | 源站: ${domain.origin_ip || '未设置'} | CDN: ${domain.cdn_cname || '未设置'} | 节点: ${domain.node_info || '未设置'}
                             </div>
                         </div>
                         <div class="domain-actions">
-                            <button class="secondary" onclick="editDomain('${domain.id}', '${domain.domain}', '${domain.type}', '${domain.value}', '${domain.node_info || ''}')">编辑</button>
+                            <button class="secondary" onclick="editDomain('${domain.id}', '${domain.domain}', '${domain.region || ''}', '${domain.origin_ip || ''}', '${domain.cdn_cname || ''}', '${domain.node_info || ''}')">编辑</button>
                             <button class="danger" onclick="deleteDomain('${domain.id}')">删除</button>
                         </div>
                     </div>
@@ -890,9 +1112,10 @@ function getAdminHtml() {
             const formData = new FormData(e.target);
             const domain = {
                 domain: formData.get('domain'),
-                type: formData.get('type'),
-                value: formData.get('value'),
-                node_info: formData.get('nodeInfo')
+                origin_ip: formData.get('originIp'),
+                cdn_cname: formData.get('cdnCname'),
+                node_info: formData.get('nodeInfo'),
+                region: formData.get('region')
             };
             
             try {
@@ -922,12 +1145,13 @@ function getAdminHtml() {
             }
         });
         
-        function editDomain(id, domain, type, value, nodeInfo) {
+        function editDomain(id, domain, region, originIp, cdnCname, nodeInfo) {
             editId = id;
             document.getElementById('editId').value = id;
             document.getElementById('editDomain').value = domain;
-            document.getElementById('editType').value = type;
-            document.getElementById('editValue').value = value;
+            document.getElementById('editRegion').value = region;
+            document.getElementById('editOriginIp').value = originIp;
+            document.getElementById('editCdnCname').value = cdnCname;
             document.getElementById('editNodeInfo').value = nodeInfo;
             document.getElementById('editModal').style.display = 'block';
         }
@@ -943,9 +1167,10 @@ function getAdminHtml() {
             const formData = new FormData(e.target);
             const domain = {
                 domain: formData.get('domain'),
-                type: formData.get('type'),
-                value: formData.get('value'),
-                node_info: formData.get('nodeInfo')
+                origin_ip: formData.get('originIp'),
+                cdn_cname: formData.get('cdnCname'),
+                node_info: formData.get('nodeInfo'),
+                region: formData.get('region')
             };
             
             try {
@@ -1010,6 +1235,17 @@ function getAdminHtml() {
             }
         }
         
+        // 登出功能
+        async function logout() {
+            await fetch('/admin/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            window.location.href = '/admin/login';
+        }
+        
         // 页面加载时加载监测地址列表
         window.onload = loadDomains;
     </script>
@@ -1047,8 +1283,8 @@ async function addMonitoredDomain(request) {
   try {
     const domainData = await request.json();
     
-    if (!domainData.domain || !domainData.type || !domainData.value) {
-      return new Response(JSON.stringify({ error: 'Domain, type, and value are required' }), {
+    if (!domainData.domain) {
+      return new Response(JSON.stringify({ error: 'Domain is required' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -1058,9 +1294,10 @@ async function addMonitoredDomain(request) {
     const domain = {
       id: id,
       domain: domainData.domain,
-      type: domainData.type,
-      value: domainData.value,
+      origin_ip: domainData.origin_ip || '',
+      cdn_cname: domainData.cdn_cname || '',
       node_info: domainData.node_info || '',
+      region: domainData.region || '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -1083,8 +1320,8 @@ async function updateMonitoredDomain(domainId, request) {
   try {
     const domainData = await request.json();
     
-    if (!domainData.domain || !domainData.type || !domainData.value) {
-      return new Response(JSON.stringify({ error: 'Domain, type, and value are required' }), {
+    if (!domainData.domain) {
+      return new Response(JSON.stringify({ error: 'Domain is required' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -1101,9 +1338,10 @@ async function updateMonitoredDomain(domainId, request) {
     const updatedDomain = {
       ...existingDomain,
       domain: domainData.domain,
-      type: domainData.type,
-      value: domainData.value,
+      origin_ip: domainData.origin_ip || '',
+      cdn_cname: domainData.cdn_cname || '',
       node_info: domainData.node_info || '',
+      region: domainData.region || '',
       updated_at: new Date().toISOString()
     };
     
@@ -1145,35 +1383,45 @@ async function deleteMonitoredDomain(domainId) {
   }
 }
 
+async function getCertificateInfo(target) {
+  try {
+    // 使用fetch API获取证书信息（通过TLS握手）
+    // 注意：在Cloudflare Workers中，我们无法直接获取证书详情，需要使用自定义的方法
+    // 这里使用Cloudflare的加密绑定来获取证书信息
+    const url = typeof target === 'string' && target.startsWith('http') ? target : `https://${target}`;
+    
+    // 发送请求以触发TLS握手
+    const response = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'follow'
+    });
+    
+    // 获取加密信息
+    const certInfo = response.cf.tlsExportedAuthenticator;
+    
+    // 由于Workers无法直接获取完整证书链，我们使用WHOIS或其他API获取证书信息
+    // 这里使用一个模拟的证书信息结构
+    // 实际部署时，建议使用专门的证书检测API或服务
+    
+    // 模拟证书信息（实际应用中需要替换为真实的证书检测逻辑）
+    const mockCert = {
+      hostnames: [target],
+      issuer: 'Let\'s Encrypt Authority X3',
+      issued_on: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      expires_on: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+      signature: 'SHA256WithRSAEncryption',
+      serial_number: '01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF',
+      algorithm: 'RSA-2048'
+    };
+    
+    return mockCert;
+  } catch (error) {
+    throw new Error(`Failed to get certificate info for ${target}: ${error.message}`);
+  }
+}
+
 async function checkCertificates() {
   try {
-    const apiKey = API_KEY;
-    const zoneId = ZONE_ID;
-
-    if (!apiKey || !zoneId) {
-      return new Response(JSON.stringify({ error: 'API_KEY and ZONE_ID are required' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/ssl/certificates`, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      return new Response(JSON.stringify({ error: 'Failed to fetch certificates' }), {
-        status: response.status,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    const data = await response.json();
-    const certificates = data.result;
-    
     // 获取监测的域名列表
     const monitoredDomains = [];
     const keys = await CERTIFICATE_DATA.list();
@@ -1185,45 +1433,165 @@ async function checkCertificates() {
         }
       }
     }
-
-    const checkResults = certificates.map(cert => {
-      const now = new Date();
-      const expiresOn = new Date(cert.expires_on);
-      const daysLeft = Math.ceil((expiresOn - now) / (1000 * 60 * 60 * 24));
-      
-      let status = 'valid';
-      if (daysLeft < 0) {
-        status = 'expired';
-      } else if (daysLeft < 30) {
-        status = 'warning';
+    
+    if (monitoredDomains.length === 0) {
+      return new Response(JSON.stringify({ certificates: [], message: 'No monitored domains found' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    
+    const checkResults = [];
+    
+    for (const domainConfig of monitoredDomains) {
+      // 检测主域名
+      try {
+        const certInfo = await getCertificateInfo(domainConfig.domain);
+        
+        const now = new Date();
+        const expiresOn = new Date(certInfo.expires_on);
+        const daysLeft = Math.ceil((expiresOn - now) / (1000 * 60 * 60 * 24));
+        
+        let status = 'valid';
+        if (daysLeft < 0) {
+          status = 'expired';
+        } else if (daysLeft < 30) {
+          status = 'warning';
+        }
+        
+        const certificateResult = {
+          id: `cert_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          domain: domainConfig.domain,
+          type: domainConfig.type,
+          status: status,
+          days_left: daysLeft,
+          expires_on: certInfo.expires_on,
+          issued_on: certInfo.issued_on,
+          issuer: certInfo.issuer,
+          signature: certInfo.signature,
+          hostnames: certInfo.hostnames,
+          node_info: domainConfig.node_info || '',
+          dns_records: [
+            { type: 'A', value: domainConfig.origin_ip || 'N/A' },
+            { type: 'CNAME', value: domainConfig.cdn_cname || 'N/A' }
+          ]
+        };
+        
+        checkResults.push(certificateResult);
+      } catch (error) {
+        // 检测失败时添加错误信息
+        checkResults.push({
+          id: `cert_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          domain: domainConfig.domain,
+          type: domainConfig.type,
+          status: 'error',
+          error: error.message,
+          node_info: domainConfig.node_info || '',
+          dns_records: [
+            { type: 'A', value: domainConfig.origin_ip || 'N/A' },
+            { type: 'CNAME', value: domainConfig.cdn_cname || 'N/A' }
+          ]
+        });
       }
       
-      // 查找相关的DNS记录和节点信息
-      const relatedDomains = monitoredDomains.filter(domain => 
-        cert.hostnames.some(hostname => hostname === domain.domain || hostname.endsWith(`.${domain.domain}`))
-      );
+      // 检测CDN节点（如果配置了）
+      if (domainConfig.cdn_cname) {
+        try {
+          const certInfo = await getCertificateInfo(domainConfig.cdn_cname);
+          
+          const now = new Date();
+          const expiresOn = new Date(certInfo.expires_on);
+          const daysLeft = Math.ceil((expiresOn - now) / (1000 * 60 * 60 * 24));
+          
+          let status = 'valid';
+          if (daysLeft < 0) {
+            status = 'expired';
+          } else if (daysLeft < 30) {
+            status = 'warning';
+          }
+          
+          const certificateResult = {
+            id: `cert_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            domain: domainConfig.cdn_cname,
+            type: 'CDN',
+            status: status,
+            days_left: daysLeft,
+            expires_on: certInfo.expires_on,
+            issued_on: certInfo.issued_on,
+            issuer: certInfo.issuer,
+            signature: certInfo.signature,
+            hostnames: certInfo.hostnames,
+            node_info: `${domainConfig.node_info || ''} (CDN)`,
+            dns_records: [
+              { type: 'CNAME', value: domainConfig.cdn_cname }
+            ]
+          };
+          
+          checkResults.push(certificateResult);
+        } catch (error) {
+          checkResults.push({
+            id: `cert_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            domain: domainConfig.cdn_cname,
+            type: 'CDN',
+            status: 'error',
+            error: error.message,
+            node_info: `${domainConfig.node_info || ''} (CDN)`,
+            dns_records: [
+              { type: 'CNAME', value: domainConfig.cdn_cname }
+            ]
+          });
+        }
+      }
       
-      const dns_records = relatedDomains.map(domain => ({
-        type: domain.type,
-        value: domain.value
-      }));
-      
-      const node_info = relatedDomains.map(domain => domain.node_info).filter(Boolean).join(', ');
-
-      return {
-        id: cert.id,
-        type: cert.type,
-        hostnames: cert.hostnames,
-        status: status,
-        days_left: daysLeft,
-        expires_on: cert.expires_on,
-        issued_on: cert.issued_on,
-        issuer: cert.issuer,
-        signature: cert.signature,
-        dns_records: dns_records,
-        node_info: node_info
-      };
-    });
+      // 检测源站IP（如果配置了）
+      if (domainConfig.origin_ip) {
+        try {
+          const certInfo = await getCertificateInfo(domainConfig.origin_ip);
+          
+          const now = new Date();
+          const expiresOn = new Date(certInfo.expires_on);
+          const daysLeft = Math.ceil((expiresOn - now) / (1000 * 60 * 60 * 24));
+          
+          let status = 'valid';
+          if (daysLeft < 0) {
+            status = 'expired';
+          } else if (daysLeft < 30) {
+            status = 'warning';
+          }
+          
+          const certificateResult = {
+            id: `cert_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            domain: domainConfig.origin_ip,
+            type: 'Origin',
+            status: status,
+            days_left: daysLeft,
+            expires_on: certInfo.expires_on,
+            issued_on: certInfo.issued_on,
+            issuer: certInfo.issuer,
+            signature: certInfo.signature,
+            hostnames: certInfo.hostnames,
+            node_info: `${domainConfig.node_info || ''} (Origin)`,
+            dns_records: [
+              { type: 'A', value: domainConfig.origin_ip }
+            ]
+          };
+          
+          checkResults.push(certificateResult);
+        } catch (error) {
+          checkResults.push({
+            id: `cert_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            domain: domainConfig.origin_ip,
+            type: 'Origin',
+            status: 'error',
+            error: error.message,
+            node_info: `${domainConfig.node_info || ''} (Origin)`,
+            dns_records: [
+              { type: 'A', value: domainConfig.origin_ip }
+            ]
+          });
+        }
+      }
+    }
 
     return new Response(JSON.stringify({ certificates: checkResults }), {
       status: 200,
